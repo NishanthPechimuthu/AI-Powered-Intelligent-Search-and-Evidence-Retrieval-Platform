@@ -60,14 +60,16 @@ class CameraWorker:
         self.pending_event_data: Optional[Dict[str, Any]] = None
         self.cap: Optional[cv2.VideoCapture] = None
         self.blur_faces = False
+        self.cascades: List[cv2.CascadeClassifier] = []
         try:
-            cascade_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
-            if os.path.exists(cascade_path):
-                self.face_cascade = cv2.CascadeClassifier(cascade_path)
-            else:
-                self.face_cascade = None
-        except Exception:
-            self.face_cascade = None
+            for fname in ["haarcascade_frontalface_default.xml", "haarcascade_frontalface_alt2.xml", "haarcascade_profileface.xml"]:
+                cascade_path = os.path.join(cv2.data.haarcascades, fname)
+                if os.path.exists(cascade_path):
+                    clf = cv2.CascadeClassifier(cascade_path)
+                    if not clf.empty():
+                        self.cascades.append(clf)
+        except Exception as e:
+            print(f"[{self.camera_id}] Error loading face cascades: {e}")
 
     def start(self):
         if not self.is_running:
@@ -86,31 +88,62 @@ class CameraWorker:
             self.thread.join(timeout=2.0)
 
     def _blur_faces(self, frame: np.ndarray) -> np.ndarray:
-        if self.face_cascade is None or frame is None:
+        if not self.cascades or frame is None:
             return frame
         try:
             h, w = frame.shape[:2]
             scale = 0.5
             small = cv2.resize(frame, (int(w * scale), int(h * scale)))
             gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-            faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=3, minSize=(20, 20))
+            gray = cv2.equalizeHist(gray)
+
+            all_faces = []
+            for cascade in self.cascades:
+                rects = cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.1,
+                    minNeighbors=2,
+                    minSize=(10, 10)
+                )
+                if len(rects) > 0:
+                    for (x, y, bw, bh) in rects:
+                        all_faces.append((int(x / scale), int(y / scale), int(bw / scale), int(bh / scale)))
+
+            if not all_faces:
+                return frame
+
             out_frame = frame.copy()
-            for (fx, fy, fw, fh) in faces:
-                x1 = max(0, int(fx / scale))
-                y1 = max(0, int(fy / scale))
-                x2 = min(w, int((fx + fw) / scale))
-                y2 = min(h, int((fy + fh) / scale))
+            for (x, y, bw, bh) in all_faces:
+                x1 = max(0, x)
+                y1 = max(0, y)
+                x2 = min(w, x + bw)
+                y2 = min(h, y + bh)
                 if x2 > x1 and y2 > y1:
                     roi = out_frame[y1:y2, x1:x2]
-                    kw = max(15, (roi.shape[1] // 2) | 1)
-                    kh = max(15, (roi.shape[0] // 2) | 1)
-                    blurred = cv2.GaussianBlur(roi, (kw, kh), 25)
+                    rh, rw = roi.shape[:2]
+                    pix_w = max(1, rw // 10)
+                    pix_h = max(1, rh // 10)
+                    small_roi = cv2.resize(roi, (pix_w, pix_h), interpolation=cv2.INTER_NEAREST)
+                    pixelated = cv2.resize(small_roi, (rw, rh), interpolation=cv2.INTER_NEAREST)
+                    kw = max(15, (rw // 2) | 1)
+                    kh = max(15, (rh // 2) | 1)
+                    blurred = cv2.GaussianBlur(pixelated, (kw, kh), 0)
                     out_frame[y1:y2, x1:x2] = blurred
+
             return out_frame
-        except Exception:
+        except Exception as e:
+            print(f"[{self.camera_id}] Error in _blur_faces: {e}")
             return frame
 
     def get_status_dict(self) -> Dict[str, Any]:
+        alert_sent = False
+        if self.active_event_id:
+            alert_sent = event_manager.is_alert_sent(self.active_event_id)
+        else:
+            latest_evt = event_manager.get_latest_event_for_camera(self.camera_id)
+            if latest_evt:
+                alert_sent = bool(latest_evt.get("twilio_alert_sent", False))
+
         return {
             "camera_id": self.camera_id,
             "name": self.name,
@@ -121,6 +154,7 @@ class CameraWorker:
             "inference_fps": round(self.inference_fps, 1),
             "is_active": self.is_running,
             "consecutive_positives": self.consecutive_positives,
+            "twilio_alert_sent": alert_sent,
         }
 
     def get_latest_jpeg(self) -> Optional[bytes]:
@@ -255,9 +289,10 @@ class CameraWorker:
         event_id = f"evt_{uuid.uuid4().hex[:8]}"
         self.active_event_id = event_id
         
+        save_frame = self._blur_faces(frame) if self.blur_faces else frame
         # 1. Capture evidence image immediately
         image_rel_path = evidence_manager.save_evidence_image(
-            self.camera_id, frame, timestamp_str
+            self.camera_id, save_frame, timestamp_str
         )
 
         event_data = {

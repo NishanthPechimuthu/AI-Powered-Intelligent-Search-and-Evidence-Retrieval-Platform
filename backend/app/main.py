@@ -11,28 +11,33 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings, EVIDENCE_DIR, CLIPS_DIR
 from app.services.video_processor import processor
 from app.services.event_manager import event_manager
+from app.services.alert_service import alert_service
 from app.api.cameras import router as cameras_router
 from app.api.events import router as events_router
 
 connected_websockets: Set[WebSocket] = set()
 
 def on_violence_event(event_data):
-    """Callback when any camera detects violence: broadcast to all active websockets."""
+    """Callback when any camera detects violence: broadcast to websockets and dispatch Twilio SMS alerts."""
     msg = {"type": "EVENT", "data": event_data}
     for ws in list(connected_websockets):
         try:
             asyncio.run_coroutine_threadsafe(ws.send_json(msg), asyncio.get_event_loop())
         except Exception:
             pass
+            
+    # Trigger Twilio SMS alert (simple, direct dispatch)
+    alert_service.send_threat_alert_async(event_data)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize detectors and start all 4 camera workers
+    # Startup: Initialize detectors and start all camera workers
     print("\n--- Initializing Multi-Camera Violence Detection System ---")
+
     processor.subscribe_events(on_violence_event)
     processor.initialize()
     processor.start_all()
-    print("[OK] All 4 camera workers running concurrently.\n")
+    print("[OK] All camera workers running concurrently.\n")
     yield
     # Shutdown: Stop workers cleanly
     print("Stopping camera workers...")

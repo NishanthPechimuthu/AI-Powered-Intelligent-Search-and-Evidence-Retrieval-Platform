@@ -11,6 +11,8 @@ import {
   Trash2,
   Maximize2,
   AlertTriangle,
+  MessageSquare,
+  CheckCircle2,
 } from "lucide-react";
 
 export interface CameraData {
@@ -23,6 +25,7 @@ export interface CameraData {
   inference_fps: number;
   is_active: boolean;
   consecutive_positives: number;
+  twilio_alert_sent?: boolean;
 }
 
 interface CameraFeedProps {
@@ -99,8 +102,17 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({
           </div>
         </div>
 
-        {/* Status Badge */}
-        <div>
+        {/* Status & Twilio Alert Badge */}
+        <div className="flex items-center gap-1.5">
+          {camera.twilio_alert_sent && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
+              title="Twilio Alert Dispatched via SMS & WhatsApp for this incident"
+            >
+              <MessageSquare className="w-3 h-3 text-emerald-700" />
+              <span>Twilio Sent</span>
+            </span>
+          )}
           {isViolent ? (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 border border-red-200 text-red-600">
               <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
@@ -141,10 +153,21 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({
           </div>
         )}
 
-        {/* HUD Overlay - Top Left REC badge */}
-        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded text-[11px] font-mono text-white border border-white/10">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          <span>REC</span>
+        {/* HUD Overlay - Top Left REC & Twilio Alert badge */}
+        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded text-[11px] font-mono text-white border border-white/10">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span>REC</span>
+          </div>
+          {camera.twilio_alert_sent && (
+            <div
+              className="flex items-center gap-1 bg-emerald-600/90 text-white backdrop-blur-xs px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-400/40 shadow-xs"
+              title="Twilio Alert Dispatched via SMS & WhatsApp"
+            >
+              <MessageSquare className="w-3 h-3" />
+              <span>Twilio Alert Sent</span>
+            </div>
+          )}
         </div>
 
         {/* HUD Overlay - Top Right Timecode */}
@@ -162,39 +185,8 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({
         </button>
       </div>
 
-      {/* Body: Probability & Telemetry Info */}
+      {/* Body: Telemetry Info */}
       <div className="p-3.5 flex flex-col gap-2.5">
-        {/* Violence Probability Bar */}
-        <div>
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-slate-700 font-medium">Violence Probability</span>
-            <span
-              className={`font-mono font-bold ${
-                isViolent
-                  ? "text-red-600"
-                  : isSuspicious
-                  ? "text-amber-600"
-                  : "text-emerald-600"
-              }`}
-            >
-              {probPercent}%
-            </span>
-          </div>
-
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div
-              className={`h-full transition-all duration-300 rounded-full ${
-                isViolent
-                  ? "bg-red-500"
-                  : isSuspicious
-                  ? "bg-amber-400"
-                  : "bg-emerald-500"
-              }`}
-              style={{ width: `${Math.min(100, Math.max(3, probPercent))}%` }}
-            />
-          </div>
-        </div>
-
         {/* Telemetry info row */}
         <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono pt-0.5">
           <span className="flex items-center gap-1">

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AlertCircle, Film, Image as ImageIcon, ShieldAlert, Clock, CheckCircle } from "lucide-react";
+import { AlertCircle, Film, Image as ImageIcon, ShieldAlert, Clock, CheckCircle, MessageSquare } from "lucide-react";
 
 export interface EventData {
   id: string;
@@ -13,6 +13,7 @@ export interface EventData {
   status: string;
   image_path?: string | null;
   clip_path?: string | null;
+  twilio_alert_sent?: boolean;
   created_at: string;
 }
 
@@ -70,6 +71,12 @@ export const RecentEvents: React.FC<RecentEventsProps> = ({
                       <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-semibold border border-red-200">
                         {confPct}% Confidence
                       </span>
+                      {evt.twilio_alert_sent && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300" title="Twilio SMS & WhatsApp alert sent once for this incident">
+                          <MessageSquare className="w-3 h-3 text-emerald-700" />
+                          <span>Twilio Sent</span>
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono mt-0.5">
                       <Clock className="w-3 h-3 text-slate-400" />

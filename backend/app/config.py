@@ -18,6 +18,18 @@ class Settings(BaseSettings):
     LOCAL_DATA_DIR: str = "./local_data"
     MODEL_DIR: str = "./backend/app/models/movinet"
     
+    # Alert & Communication Settings
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_PHONE_NUMBER: str = ""
+    TWILIO_WHATSAPP_NUMBER: str = ""
+    TO_NUMBER_1: str = "+917200524344"
+    TO_NUMBER_2: str = "+919003899180"
+    
+    QWEN_API_BASE_URL: str = "https://vijay.blk2np.qzz.io"
+    NGROK_AUTHTOKEN: str = ""
+    NGROK_BASE_URL: str = ""
+    
     class Config:
         env_file = ".env"
         extra = "allow"

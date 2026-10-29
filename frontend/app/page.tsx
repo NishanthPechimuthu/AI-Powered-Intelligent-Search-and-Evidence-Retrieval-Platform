@@ -20,6 +20,8 @@ import {
   AlertTriangle,
   X,
   Trash2,
+  MessageSquare,
+  MessageSquareOff,
 } from "lucide-react";
 
 import { CameraFeed, CameraData } from "@/components/CameraFeed";
@@ -36,9 +38,10 @@ const getBackendUrl = () => {
       window.location.hostname === "localhost" || window.location.hostname === "::1"
         ? "127.0.0.1"
         : window.location.hostname;
-    return `${window.location.protocol}//${host}:8002`;
+    const port = process.env.NEXT_PUBLIC_BACKEND_PORT || "8002";
+    return `${window.location.protocol}//${host}:${port}`;
   }
-  return "http://127.0.0.1:8002";
+  return `http://127.0.0.1:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8002"}`;
 };
 
 const getWsUrl = () => {
@@ -48,9 +51,10 @@ const getWsUrl = () => {
         ? "127.0.0.1"
         : window.location.hostname;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${host}:8002/ws/live`;
+    const port = process.env.NEXT_PUBLIC_BACKEND_PORT || "8002";
+    return `${proto}//${host}:${port}/ws/live`;
   }
-  return "ws://127.0.0.1:8002/ws/live";
+  return `ws://127.0.0.1:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8002"}/ws/live`;
 };
 
 type FilterType = "all" | "violent" | "suspicious" | "safe";
@@ -80,8 +84,38 @@ export default function Dashboard() {
 
   // Feature controls
   const [blurFaces, setBlurFaces] = useState(false);
+  const [twilioAlerts, setTwilioAlerts] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
+
+  // Fetch alert toggle status
+  const fetchAlertsStatus = async () => {
+    try {
+      const res = await fetch(`${getBackendUrl()}/api/events/alerts/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setTwilioAlerts(Boolean(data.alerts_enabled));
+      }
+    } catch {}
+  };
+
+  const handleToggleTwilioAlerts = async () => {
+    try {
+      const res = await fetch(`${getBackendUrl()}/api/events/alerts/toggle`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTwilioAlerts(data.alerts_enabled);
+        showToast(
+          data.alerts_enabled ? "Twilio SMS & WhatsApp alerts enabled" : "Twilio SMS & WhatsApp alerts paused",
+          "info"
+        );
+      }
+    } catch {
+      showToast("Could not communicate with backend for alert toggle", "error");
+    }
+  };
 
   // Telemetry & WebSocket
   const [isConnected, setIsConnected] = useState(false);
@@ -224,6 +258,7 @@ export default function Dashboard() {
     fetchCameras();
     fetchStats();
     fetchBlurStatus();
+    fetchAlertsStatus();
 
     const statsInterval = setInterval(fetchStats, 2000);
     const eventsInterval = setInterval(async () => {
@@ -584,6 +619,28 @@ export default function Dashboard() {
                 <>
                   <Eye className="w-3.5 h-3.5 text-slate-500" />
                   <span>Blur Faces</span>
+                </>
+              )}
+            </button>
+
+            {/* Twilio SMS & WhatsApp Alerts Toggle Button */}
+            <button
+              onClick={handleToggleTwilioAlerts}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer shadow-2xs ${
+                twilioAlerts
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                  : "bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100"
+              }`}
+            >
+              {twilioAlerts ? (
+                <>
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Twilio Alerts: ON</span>
+                </>
+              ) : (
+                <>
+                  <MessageSquareOff className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Twilio Alerts: PAUSED</span>
                 </>
               )}
             </button>

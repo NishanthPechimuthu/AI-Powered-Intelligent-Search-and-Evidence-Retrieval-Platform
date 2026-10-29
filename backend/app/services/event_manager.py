@@ -30,9 +30,19 @@ class EventManager:
                     status TEXT NOT NULL,
                     image_path TEXT,
                     clip_path TEXT,
+                    twilio_alert_sent INTEGER DEFAULT 0,
                     created_at TEXT NOT NULL
                 )
             """)
+            # Check if twilio_alert_sent column exists in existing DB tables
+            cursor.execute("PRAGMA table_info(events)")
+            columns = [col["name"] for col in cursor.fetchall()]
+            if "twilio_alert_sent" not in columns:
+                try:
+                    cursor.execute("ALTER TABLE events ADD COLUMN twilio_alert_sent INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_camera ON events(camera_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at DESC)")
             conn.commit()
@@ -43,8 +53,9 @@ class EventManager:
             cursor.execute("""
                 INSERT OR REPLACE INTO events (
                     id, camera_id, start_timestamp, detection_timestamp,
-                    end_timestamp, confidence, status, image_path, clip_path, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    end_timestamp, confidence, status, image_path, clip_path,
+                    twilio_alert_sent, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 event_data["id"],
                 event_data["camera_id"],
@@ -55,10 +66,28 @@ class EventManager:
                 event_data["status"],
                 event_data.get("image_path"),
                 event_data.get("clip_path"),
+                1 if event_data.get("twilio_alert_sent") else 0,
                 event_data.get("created_at", datetime.datetime.now().isoformat())
             ))
             conn.commit()
             return event_data["id"]
+
+    def mark_alert_sent(self, event_id: str):
+        """Records in the local database that a Twilio alert has been dispatched for this incident."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE events SET twilio_alert_sent = 1 WHERE id = ?", (event_id,))
+            conn.commit()
+
+    def is_alert_sent(self, event_id: str) -> bool:
+        """Checks if a Twilio alert was already sent for this specific incident."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT twilio_alert_sent FROM events WHERE id = ?", (event_id,))
+            row = cursor.fetchone()
+            if row and row["twilio_alert_sent"]:
+                return bool(row["twilio_alert_sent"])
+            return False
 
     def update_event_end(self, event_id: str, end_timestamp: str, clip_path: Optional[str] = None):
         with self._get_connection() as conn:
@@ -78,14 +107,34 @@ class EventManager:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (limit,))
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+            results = []
+            for row in rows:
+                d = dict(row)
+                d["twilio_alert_sent"] = bool(d.get("twilio_alert_sent", 0))
+                results.append(d)
+            return results
 
     def get_event_by_id(self, event_id: str) -> Optional[Dict[str, Any]]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM events WHERE id = ?", (event_id,))
             row = cursor.fetchone()
-            return dict(row) if row else None
+            if row:
+                d = dict(row)
+                d["twilio_alert_sent"] = bool(d.get("twilio_alert_sent", 0))
+                return d
+            return None
+
+    def get_latest_event_for_camera(self, camera_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM events WHERE camera_id = ? ORDER BY created_at DESC LIMIT 1", (camera_id,))
+            row = cursor.fetchone()
+            if row:
+                d = dict(row)
+                d["twilio_alert_sent"] = bool(d.get("twilio_alert_sent", 0))
+                return d
+            return None
 
     def get_total_events_count(self) -> int:
         with self._get_connection() as conn:
